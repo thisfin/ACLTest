@@ -6,7 +6,7 @@
 	<true/>
 	<key>com.apple.security.temporary-exception.files.absolute-path.read-write</key>
 	<array>
-		<string>/etc/hosts1</string>
+		<string>/etc/hosts</string>
 	</array>
 	<key>com.apple.security.temporary-exception.apple-events</key>
 	<array>

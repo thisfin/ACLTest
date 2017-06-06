@@ -50,13 +50,71 @@ class ACLHelp {
         while acl_get_entry(result, entry_id.rawValue, &entryT) == 0 {
             entry_id = ACL_NEXT_ENTRY
 
-            NSLog("\(String(describing: parseTagType(entry: entryT)))")
-            NSLog("\(String(describing: parsePerm(entry: entryT)))")
-            NSLog("\(String(describing: parseQualifier(entry: entryT)))")
+            if let tagType = parseTagType(entry: entryT), tagType == ACL_EXTENDED_ALLOW { // 验证 type
+                if let (isU, guid) = parseQualifier(entry: entryT), (isUser == isU && (isUser ? uid == guid : gid == guid)) { // 验证 id
+                    var subFlag = true;
+                    let permResult = parsePerm(entry: entryT)
+                    perms.forEach({ (perm) in // 验证权限
+                        subFlag = permResult.contains(perm)
+                        if !subFlag {
+                            return
+                        }
+                    })
+                    if subFlag {
+                        return true
+                    }
+                }
+            }
 
+//            NSLog("\(String(describing: parseTagType(entry: entryT)))")
+//            NSLog("\(String(describing: parsePerm(entry: entryT)))")
+//            NSLog("\(String(describing: parseQualifier(entry: entryT)))")
         }
 
         return false
+    }
+
+    func create() -> Bool {
+        guard var result: acl_t? = acl_get_file(url.path, ACL_TYPE_EXTENDED) else {
+            return false
+        }
+
+        result = acl_init(1)
+
+        var entryT: acl_entry_t?
+        if acl_create_entry(&result, &entryT) != 0 {
+            return false
+        }
+
+
+
+        // 用户 id
+        let uidT: uid_t = 501
+        var uuidArray = [UInt8].init(repeating: 0, count: 16)
+        if mbr_uid_to_uuid(uidT, &uuidArray) != 0 {
+            return false
+        }
+        var uuid: uuid_t = UUID.init().uuid
+        memcpy(&uuid, &uuidArray, MemoryLayout<uuid_t>.size)
+        let uuidMP: UnsafeMutablePointer<uuid_t> = withUnsafeMutablePointer(to: &uuid, {return $0})
+        let uuidT: UnsafeRawPointer = UnsafeRawPointer(uuidMP)
+        out(pointer: uuidT)
+
+        if acl_set_qualifier(entryT, uuidT) != 0 {
+            return false
+        }
+
+        return true
+    }
+
+    private func out(pointer: UnsafeRawPointer) {
+        var uuid = pointer.assumingMemoryBound(to: uuid_t.self).pointee
+        var uuidArray = [UInt8].init(repeating: 0, count: 16)
+        memcpy(&uuidArray, &uuid, MemoryLayout<uuid_t>.size)
+
+        if let pw = getpwuuid(&uuidArray)?.pointee {
+            NSLog("\(pw.pw_uid)")
+        }
     }
 
     private func parseTagType(entry: acl_entry_t?) -> acl_tag_t? {
