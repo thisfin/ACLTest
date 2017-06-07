@@ -66,20 +66,21 @@ class ACLHelp {
                 }
             }
 
-//            NSLog("\(String(describing: parseTagType(entry: entryT)))")
-//            NSLog("\(String(describing: parsePerm(entry: entryT)))")
-//            NSLog("\(String(describing: parseQualifier(entry: entryT)))")
+            NSLog("\(String(describing: parseTagType(entry: entryT)))")
+            NSLog("\(String(describing: parsePerm(entry: entryT)))")
+            NSLog("\(String(describing: parseQualifier(entry: entryT)))")
+            NSLog("\(String(describing: parseFlag(entry: entryT)))")
         }
 
         return false
     }
 
     func create() -> Bool {
-        guard var result: acl_t? = acl_get_file(url.path, ACL_TYPE_EXTENDED) else {
-            return false
-        }
+//        guard var result: acl_t? = acl_get_file(url.path, ACL_TYPE_EXTENDED) else {
+//            return false
+//        }
 
-        result = acl_init(1)
+        var result = acl_init(1)
 
         var entryT: acl_entry_t?
         if acl_create_entry(&result, &entryT) != 0 {
@@ -87,6 +88,22 @@ class ACLHelp {
         }
 
 
+        if acl_set_tag_type(entryT, ACL_EXTENDED_ALLOW) != 0 {
+            return false
+        }
+
+        // 权限
+        let permMP = UnsafeMutablePointer<acl_perm_t>.allocate(capacity: 8) // 长度? 两个Int32?
+        let permsetT: acl_permset_t = OpaquePointer.init(permMP)
+        if acl_add_perm(permsetT, ACL_READ_DATA) != 0 {
+            return false
+        }
+        if acl_add_perm(permsetT, ACL_WRITE_DATA) != 0 {
+            return false
+        }
+        if acl_set_permset(entryT, permsetT) != 0 {
+            return false
+        }
 
         // 用户 id
         let uidT: uid_t = 501
@@ -94,15 +111,37 @@ class ACLHelp {
         if mbr_uid_to_uuid(uidT, &uuidArray) != 0 {
             return false
         }
+//        var uuid: uuid_t = UUID.init().uuid
+
+        let guidMP = UnsafeMutablePointer<acl_perm_t>.allocate(capacity: Int(KAUTH_GUID_SIZE))
+        let guidRP = UnsafeMutableRawPointer(guidMP)
+        memcpy(guidRP, &uuidArray, MemoryLayout<guid_t>.size)
+//        memcpy(&uuid, &uuidArray, MemoryLayout<uuid_t>.size)
+//        let uuidMP: UnsafeMutablePointer<guid_t> = withUnsafeMutablePointer(to: &uuid) {pointer in ()}
+
+//        let uuidT: UnsafeRawPointer = UnsafeRawPointer(uuidMP)
+//        out(pointer: uuidT)
+        out(pointer: guidRP)
+
+        if acl_set_qualifier(entryT, guidRP) != 0 {
+            return false
+        }
+
+
+
         var uuid: uuid_t = UUID.init().uuid
         memcpy(&uuid, &uuidArray, MemoryLayout<uuid_t>.size)
-        let uuidMP: UnsafeMutablePointer<uuid_t> = withUnsafeMutablePointer(to: &uuid, {return $0})
+
+        var ggid = guid_t.init(g_guid: uuid)
+        let uuidMP: UnsafeMutablePointer<guid_t> = withUnsafeMutablePointer(to: &ggid, {return $0})
+//        let uuidMP: UnsafeMutablePointer<uuid_t> = withUnsafeMutablePointer(to: &uuid, {return $0})
         let uuidT: UnsafeRawPointer = UnsafeRawPointer(uuidMP)
         out(pointer: uuidT)
 
         if acl_set_qualifier(entryT, uuidT) != 0 {
             return false
         }
+
 
         return true
     }
@@ -111,6 +150,10 @@ class ACLHelp {
         var uuid = pointer.assumingMemoryBound(to: uuid_t.self).pointee
         var uuidArray = [UInt8].init(repeating: 0, count: 16)
         memcpy(&uuidArray, &uuid, MemoryLayout<uuid_t>.size)
+
+//        var guid = pointer.assumingMemoryBound(to: guid_t.self).pointee
+//        var uuidArray = [UInt8].init(repeating: 0, count: 0)
+//        memcpy(&uuidArray, &guid.g_guid, 0)// MemoryLayout<guid_t>.size)
 
         if let pw = getpwuuid(&uuidArray)?.pointee {
             NSLog("\(pw.pw_uid)")
