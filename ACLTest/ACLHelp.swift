@@ -44,9 +44,6 @@ class ACLHelp {
     }
 
     // 检查权限
-    // acl https://github.com/jvscode/getfacl/blob/master/getfacl.c
-    // mbr https://github.com/practicalswift/osx/blob/master/src/libinfo/membership.subproj/membership.c
-    // sizeof https://stackoverflow.com/questions/24662864/swift-how-to-use-sizeof
     private func checkACLPermission(uid: UInt32 = 0, gid: UInt32 = 0, isUser: Bool, perms: [acl_perm_t]) -> Bool {
         guard let result = acl_get_file(url.path, ACL_TYPE_EXTENDED) else {
             return false
