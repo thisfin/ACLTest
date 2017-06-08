@@ -10,7 +10,7 @@
 
 ### 相关链接
 
-* [acl 读取, C 语言实现v](https://github.com/jvscode/getfacl/blob/master/getfacl.c)
+* [ACL 读取, C 语言实现](https://github.com/jvscode/getfacl/blob/master/getfacl.c)
 * [Swift 调用 C](http://www.jianshu.com/p/cb2efe0957f4)
 * [mbr 源代码.h](https://github.com/practicalswift/osx/blob/master/src/libinfo/membership.subproj/membership.h)
 * [mbr 源代码.c](https://github.com/practicalswift/osx/blob/master/src/libinfo/membership.subproj/membership.c)
