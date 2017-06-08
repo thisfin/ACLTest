@@ -9,8 +9,8 @@
 import Foundation
 
 class ACLHelp {
-    static let ACL_PERM_DIR = 1 << 0
-    static let ACL_PERM_FILE = 1 << 1
+    private static let ACL_PERM_DIR = 1 << 0
+    private static let ACL_PERM_FILE = 1 << 1
 
     private let url: URL
 
@@ -25,6 +25,14 @@ class ACLHelp {
             return String(utf8String: &acl_to_text(result, &size).pointee)
         }
         return nil
+    }
+
+    func checkACLPermission(userName: String, perms: [acl_perm_t]) -> Bool {
+        let nameUP: UnsafePointer<Int8>? = (userName as NSString).utf8String
+        guard let ump = getpwnam(nameUP) else {
+            return false
+        }
+        return checkACLPermission(uid: ump.pointee.pw_uid, perms:perms)
     }
 
     func checkACLPermission(uid: UInt32, perms: [acl_perm_t]) -> Bool {
@@ -66,94 +74,24 @@ class ACLHelp {
                 }
             }
 
-            NSLog("\(String(describing: parseTagType(entry: entryT)))")
-            NSLog("\(String(describing: parsePerm(entry: entryT)))")
-            NSLog("\(String(describing: parseQualifier(entry: entryT)))")
-            NSLog("\(String(describing: parseFlag(entry: entryT)))")
+//            NSLog("\(String(describing: parseTagType(entry: entryT)))")
+//            NSLog("\(String(describing: parsePerm(entry: entryT)))")
+//            NSLog("\(String(describing: parseQualifier(entry: entryT)))")
+//            NSLog("\(String(describing: parseFlag(entry: entryT)))")
         }
 
         return false
     }
 
-    func create() -> Bool {
-//        guard var result: acl_t? = acl_get_file(url.path, ACL_TYPE_EXTENDED) else {
-//            return false
-//        }
-
-        var result = acl_init(1)
-
-        var entryT: acl_entry_t?
-        if acl_create_entry(&result, &entryT) != 0 {
-            return false
+    private func outUID(pointer: UnsafeRawPointer) {
+        var uuidArray = [UInt8].init(repeating: 0, count: 16) // 因为 uuid_t 和 guid_t 的size一样, so
+        if arc4random_uniform(UInt32(2)) % 2 == 0 { // 两种写法都ok
+            var uuidT = pointer.assumingMemoryBound(to: uuid_t.self).pointee
+            memcpy(&uuidArray, &uuidT, MemoryLayout<uuid_t>.size)
+        } else {
+            var guidT = pointer.assumingMemoryBound(to: guid_t.self).pointee
+            memcpy(&uuidArray, &guidT.g_guid, MemoryLayout<uuid_t>.size)
         }
-
-
-        if acl_set_tag_type(entryT, ACL_EXTENDED_ALLOW) != 0 {
-            return false
-        }
-
-        // 权限
-        let permMP = UnsafeMutablePointer<acl_perm_t>.allocate(capacity: 8) // 长度? 两个Int32?
-        let permsetT: acl_permset_t = OpaquePointer.init(permMP)
-        if acl_add_perm(permsetT, ACL_READ_DATA) != 0 {
-            return false
-        }
-        if acl_add_perm(permsetT, ACL_WRITE_DATA) != 0 {
-            return false
-        }
-        if acl_set_permset(entryT, permsetT) != 0 {
-            return false
-        }
-
-        // 用户 id
-        let uidT: uid_t = 501
-        var uuidArray = [UInt8].init(repeating: 0, count: 16)
-        if mbr_uid_to_uuid(uidT, &uuidArray) != 0 {
-            return false
-        }
-//        var uuid: uuid_t = UUID.init().uuid
-
-        let guidMP = UnsafeMutablePointer<acl_perm_t>.allocate(capacity: Int(KAUTH_GUID_SIZE))
-        let guidRP = UnsafeMutableRawPointer(guidMP)
-        memcpy(guidRP, &uuidArray, MemoryLayout<guid_t>.size)
-//        memcpy(&uuid, &uuidArray, MemoryLayout<uuid_t>.size)
-//        let uuidMP: UnsafeMutablePointer<guid_t> = withUnsafeMutablePointer(to: &uuid) {pointer in ()}
-
-//        let uuidT: UnsafeRawPointer = UnsafeRawPointer(uuidMP)
-//        out(pointer: uuidT)
-        out(pointer: guidRP)
-
-        if acl_set_qualifier(entryT, guidRP) != 0 {
-            return false
-        }
-
-
-
-        var uuid: uuid_t = UUID.init().uuid
-        memcpy(&uuid, &uuidArray, MemoryLayout<uuid_t>.size)
-
-        var ggid = guid_t.init(g_guid: uuid)
-        let uuidMP: UnsafeMutablePointer<guid_t> = withUnsafeMutablePointer(to: &ggid, {return $0})
-//        let uuidMP: UnsafeMutablePointer<uuid_t> = withUnsafeMutablePointer(to: &uuid, {return $0})
-        let uuidT: UnsafeRawPointer = UnsafeRawPointer(uuidMP)
-        out(pointer: uuidT)
-
-        if acl_set_qualifier(entryT, uuidT) != 0 {
-            return false
-        }
-
-
-        return true
-    }
-
-    private func out(pointer: UnsafeRawPointer) {
-        var uuid = pointer.assumingMemoryBound(to: uuid_t.self).pointee
-        var uuidArray = [UInt8].init(repeating: 0, count: 16)
-        memcpy(&uuidArray, &uuid, MemoryLayout<uuid_t>.size)
-
-//        var guid = pointer.assumingMemoryBound(to: guid_t.self).pointee
-//        var uuidArray = [UInt8].init(repeating: 0, count: 0)
-//        memcpy(&uuidArray, &guid.g_guid, 0)// MemoryLayout<guid_t>.size)
 
         if let pw = getpwuuid(&uuidArray)?.pointee {
             NSLog("\(pw.pw_uid)")
@@ -221,12 +159,13 @@ class ACLHelp {
         return flags
     }
 
+    // 此方法也可以使用 c 的方法 int mbr_uuid_to_id(const uuid_t uu, id_t* uid_or_gid, int* id_type); 来实现
     private func parseQualifier(entry: acl_entry_t?) -> (isUser: Bool, id: UInt32)? {
         guard let qualifier = acl_get_qualifier(entry) else {
             return nil
         }
 
-//        let uuid = UUID.init(uuid: qualifier.assumingMemoryBound(to: uuid_t.self).pointee)
+        // let uuid = UUID.init(uuid: qualifier.assumingMemoryBound(to: uuid_t.self).pointee)
         var uuid = qualifier.assumingMemoryBound(to: uuid_t.self).pointee
         var uuidArray = [UInt8].init(repeating: 0, count: 16)
         memcpy(&uuidArray, &uuid, MemoryLayout<uuid_t>.size)
@@ -240,19 +179,19 @@ class ACLHelp {
         return nil
     }
 
-    struct ACLPerm {
+    private struct ACLPerm {
         let perm: acl_perm_t
         let name: String
         let flags: Int
     }
 
-    struct ACLFlag {
+    private struct ACLFlag {
         let flag: acl_flag_t
         let name: String
         let flags: Int
     }
 
-    let aclPerms = [
+    private let aclPerms = [
         ACLPerm(perm: ACL_READ_DATA, name: "read", flags: ACL_PERM_FILE),
         ACLPerm(perm: ACL_LIST_DIRECTORY, name: "list", flags: ACL_PERM_DIR),
         ACLPerm(perm: ACL_WRITE_DATA, name: "write", flags: ACL_PERM_FILE),
@@ -272,7 +211,7 @@ class ACLHelp {
         ACLPerm(perm: ACL_CHANGE_OWNER, name: "chown", flags: ACL_PERM_FILE | ACL_PERM_DIR)
     ]
 
-    let aclFlags = [
+    private let aclFlags = [
         ACLFlag(flag: ACL_ENTRY_FILE_INHERIT, name: "file_inherit", flags: ACL_PERM_DIR),
         ACLFlag(flag: ACL_ENTRY_DIRECTORY_INHERIT, name: "directory_inherit", flags: ACL_PERM_DIR),
         ACLFlag(flag: ACL_ENTRY_LIMIT_INHERIT, name: "limit_inherit", flags: ACL_PERM_FILE | ACL_PERM_DIR),
@@ -281,7 +220,78 @@ class ACLHelp {
         ACLFlag(flag: ACL_ENTRY_INHERITED, name: "??", flags: ACL_PERM_FILE | ACL_PERM_DIR),
         ACLFlag(flag: ACL_FLAG_DEFER_INHERIT, name: "??", flags: ACL_PERM_FILE | ACL_PERM_DIR)
     ]
+
+    // MARK: - 测试用, 代码正常, 但是因为权限不够无法保存. root 应该可以?
+    func create() -> Bool {
+        guard var result: acl_t? = acl_get_file(url.path, ACL_TYPE_EXTENDED) else {
+            return false
+        }
+        //        var result = acl_init(1)
+
+        var entryT: acl_entry_t?
+        if acl_create_entry(&result, &entryT) != 0 {
+            return false
+        }
+
+        // type
+        if acl_set_tag_type(entryT, ACL_EXTENDED_ALLOW) != 0 {
+            return false
+        }
+
+        // 权限
+        let permUMP = UnsafeMutablePointer<acl_perm_t>.allocate(capacity: MemoryLayout<acl_perm_t>.size * 2)
+        let permsetT: acl_permset_t = OpaquePointer.init(permUMP)
+        if acl_add_perm(permsetT, ACL_READ_DATA) != 0 {
+            return false
+        }
+        if acl_add_perm(permsetT, ACL_WRITE_DATA) != 0 {
+            return false
+        }
+        if acl_set_permset(entryT, permsetT) != 0 {
+            return false
+        }
+        permUMP.deallocate(capacity: MemoryLayout<acl_perm_t>.size * 2)
+
+        // 用户 id
+        let uidT: uid_t = 501
+        var uuidArray = [UInt8].init(repeating: 0, count: MemoryLayout<uuid_t>.size / MemoryLayout<UInt8>.size)
+        if mbr_uid_to_uuid(uidT, &uuidArray) != 0 { // c 函数, 此处的参数为 c 的
+            return false
+        }
+
+        if arc4random_uniform(UInt32(2)) % 2 == 0 { // 两种写法都ok
+            let guidUMP = UnsafeMutablePointer<uuid_t>.allocate(capacity: MemoryLayout<uuid_t>.size)
+            let guidUMRP = UnsafeMutableRawPointer(guidUMP)
+            memcpy(guidUMRP, &uuidArray, MemoryLayout<uuid_t>.size)
+            outUID(pointer: guidUMRP)
+            if acl_set_qualifier(entryT, guidUMRP) != 0 {
+                return false
+            }
+            guidUMP.deallocate(capacity: MemoryLayout<uuid_t>.size)
+        } else {
+            var uuidT: uuid_t = UUID.init().uuid
+            memcpy(&uuidT, &uuidArray, MemoryLayout<uuid_t>.size)
+            var guidT = guid_t.init(g_guid: uuidT)
+            let guidUMP: UnsafeMutablePointer<guid_t> = withUnsafeMutablePointer(to: &guidT, {return $0})
+            let guidURP: UnsafeRawPointer = UnsafeRawPointer(guidUMP)
+            outUID(pointer: guidURP)
+            if acl_set_qualifier(entryT, guidURP) != 0 {
+                return false
+            }
+        }
+
+        if acl_valid(result) != 0 {
+            return false
+        }
+
+        var size = acl_size(result)
+        let str = String(utf8String: &acl_to_text(result, &size).pointee)
+        NSLog(str!)
+
+        if acl_set_file(url.path, ACL_TYPE_EXTENDED, result) != 0 {
+            return false
+        }
+        
+        return true
+    }
 }
-
-
-

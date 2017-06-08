@@ -20,10 +20,5 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                             defer: false)
         window.center()
         window.makeKeyAndOrderFront(self)
-
-        let url = URL.init(fileURLWithPath: NSOpenStepRootDirectory() + "etc/hosts")
-        var b = ACLHelp.init(url: url).checkACLPermission(uid: 501, perms: [ACL_WRITE_DATA])
-         b = ACLHelp.init(url: url).create()
-        NSLog("\(b)")
     }
 }
